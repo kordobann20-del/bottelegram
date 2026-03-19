@@ -5,10 +5,10 @@ import os
 import datetime
 
 # ================= НАСТРОЙКИ =================
-# Берем токен из настроек Railway
 TOKEN = os.getenv('TOKEN')
 CHANNEL_ID = '-1003740141875' 
 NICK_LIMIT_DAYS = 7 
+ADMIN_ID = 5845609895  # Твой ID для безлимитной смены ника
 # =============================================
 
 bot = telebot.TeleBot(TOKEN)
@@ -24,7 +24,6 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- КЛАВИАТУРЫ ---
 def get_main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("Завершение карьеры", "Возвращение карьеры")
@@ -38,12 +37,10 @@ def get_back_menu():
     markup.add("⬅️ Назад")
     return markup
 
-# --- СТАРТ И РЕГИСТРАЦИЯ ---
 @bot.message_handler(commands=['start'])
 def start(message):
     data = load_data()
     user_id = str(message.from_user.id)
-
     if user_id not in data or "rb_nick" not in data[user_id]:
         msg = bot.send_message(message.chat.id, "👋 Привет! Введите ваш **Ник в РБ** для регистрации:")
         bot.register_next_step_handler(msg, register_user)
@@ -61,7 +58,6 @@ def register_user(message):
     save_data(data)
     bot.send_message(message.chat.id, f"✅ Ник **{rb_nick}** сохранен!", reply_markup=get_main_menu())
 
-# --- ОБРАБОТКА ТЕКСТА ---
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     data = load_data()
@@ -76,6 +72,13 @@ def handle_text(message):
     user_info = f"🎮 Ник: {rb_nick} | 👤 ТГ: {user_tag}"
 
     if message.text == "Изменить ник":
+        # ПРОВЕРКА: Если это ТЫ (админ), пускаем без очереди
+        if message.from_user.id == ADMIN_ID:
+            msg = bot.send_message(message.chat.id, "👑 Привет, Босс! Тебе можно менять ник без лимитов. Вводи новый:", reply_markup=get_back_menu())
+            bot.register_next_step_handler(msg, process_nick_change)
+            return
+
+        # Для остальных проверяем время
         last_change_str = data[user_id].get("last_nick_change")
         if last_change_str:
             last_change = datetime.datetime.strptime(last_change_str, "%Y-%m-%d %H:%M:%S")
@@ -83,6 +86,7 @@ def handle_text(message):
             if days_passed < NICK_LIMIT_DAYS:
                 bot.send_message(message.chat.id, f"❌ Менять ник можно раз в 7 дней!\nПодождите еще **{NICK_LIMIT_DAYS - days_passed} дн.**")
                 return
+        
         msg = bot.send_message(message.chat.id, "Введите новый **Ник в РБ**:", reply_markup=get_back_menu())
         bot.register_next_step_handler(msg, process_nick_change)
 
@@ -108,8 +112,6 @@ def handle_text(message):
 
     elif message.text == "Профиль":
         bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник РБ: `{rb_nick}`\n🔗 ТГ: {user_tag}")
-
-# --- ЛОГИКА ШАГОВ ---
 
 def process_nick_change(message):
     if message.text == "⬅️ Назад":
@@ -141,8 +143,8 @@ def process_club(message, user_info):
         bot.send_message(CHANNEL_ID, report, parse_mode='Markdown')
         bot.send_message(message.chat.id, "✅ Опубликовано!", reply_markup=get_main_menu())
     except:
-        bot.send_message(message.chat.id, "⚠️ Ошибка! Нужно писать через запятую.", reply_markup=get_main_menu())
+        bot.send_message(message.chat.id, "⚠️ Ошибка! Нужно писать через запятую (Клуб, П.С.).", reply_markup=get_main_menu())
 
 if __name__ == "__main__":
-    print("Бот Трансфермаркет запущен на Railway!")
+    print("Бот запущен...")
     bot.infinity_polling()
