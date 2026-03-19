@@ -3,13 +3,22 @@ from telebot import types
 import json
 import os
 import datetime
+import time
 
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv('TOKEN')
 CHANNEL_ID = '-1003740141875' 
 NICK_LIMIT_DAYS = 7 
-RETIRE_LIMIT_DAYS = 5  # Ограничение на возврат (5 дней)
-ADMIN_ID = 5845609895  
+RETIRE_LIMIT_DAYS = 5
+ADMIN_ID = 5845609895
+
+# Владельцы клубов и их данные
+CLUB_OWNERS = {
+    7932332909: "Arsenal",
+    7908040352: "Inter Milan",
+    8169093601: "Bayern Munich",
+    7138854880: "Albacete"
+}
 # =============================================
 
 bot = telebot.TeleBot(TOKEN)
@@ -17,8 +26,11 @@ DATA_FILE = "users_data.json"
 
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def save_data(data):
@@ -32,168 +44,186 @@ def get_main_menu(user_id):
     
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     
-    # Если админ — видит всё. Если не на пенсии — видит завершение.
+    # Кнопки карьеры
     if user_id == ADMIN_ID or not is_retired:
         markup.add("Завершение карьеры")
-    
-    # Кнопка возвращения видна всегда, если человек на пенсии (или админу)
     if user_id == ADMIN_ID or is_retired:
         markup.add("Возвращение карьеры")
         
-    markup.add("Свободный агент", "Переход в клуб")
-    markup.add("Свой текст", "Профиль")
+    markup.add("Свободный агент") # Кнопка "Переход в клуб" УДАЛЕНА
+    
+    # Кнопка только для владельцев или админа
+    if user_id in CLUB_OWNERS or user_id == ADMIN_ID:
+        markup.add("Предложить трансфер 🤝")
+        
+    markup.add("Список клубов 📋", "Профиль")
     markup.add("Изменить ник")
-    return markup
-
-def get_back_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("⬅️ Назад")
     return markup
 
 @bot.message_handler(commands=['start'])
 def start(message):
     data = load_data()
     user_id = str(message.from_user.id)
-    if user_id not in data or "rb_nick" not in data[user_id]:
+    username = message.from_user.username.lower() if message.from_user.username else None
+    
+    if user_id not in data:
+        data[user_id] = {"is_retired": False}
+    
+    if username:
+        data[user_id]["username"] = username
+    
+    if "rb_nick" not in data[user_id]:
+        save_data(data)
         msg = bot.send_message(message.chat.id, "👋 Привет! Введите ваш **Ник в РБ** для регистрации:")
         bot.register_next_step_handler(msg, register_user)
     else:
+        save_data(data)
         bot.send_message(message.chat.id, "Главное меню:", reply_markup=get_main_menu(message.from_user.id))
 
 def register_user(message):
     rb_nick = message.text.strip()
     user_id = str(message.from_user.id)
     data = load_data()
-    data[user_id] = {
-        "rb_nick": rb_nick,
-        "last_nick_change": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "is_retired": False
-    }
+    data[user_id]["rb_nick"] = rb_nick
+    data[user_id]["last_nick_change"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
     bot.send_message(message.chat.id, f"✅ Ник **{rb_nick}** сохранен!", reply_markup=get_main_menu(message.from_user.id))
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
+    user_id = message.from_user.id
+    user_id_str = str(user_id)
     data = load_data()
-    user_id = str(message.from_user.id)
 
-    if user_id not in data:
+    if user_id_str not in data:
         start(message)
         return
 
-    rb_nick = data[user_id]["rb_nick"]
-    user_tag = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
-    user_info = f"🎮 Ник: {rb_nick} | 👤 ТГ: {user_tag}"
+    # --- СПИСОК КЛУБОВ ---
+    if message.text == "Список клубов 📋":
+        text = (
+            "❗️❕ОФИЦИАЛЬНЫЕ ТМ КЛУБЫ\n\n"
+            "🇮🇹Inter Milan - @Banditdontrealme\n"
+            "🇩🇪Bayern Munich - @EstavaoJr\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿Arsenal - @Nagisls\n\n"
+            "🔥КАСТОМНЫЕ ТМ КЛУБЫ\n"
+            "🇪🇸Albacete - @Eoupapa"
+        )
+        bot.send_message(message.chat.id, text)
 
-    if message.text == "Завершение карьеры":
-        msg = bot.send_message(message.chat.id, "🚫 Напишите П.С. для завершения карьеры:", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, process_retirement, user_info)
+    # --- ЛОГИКА ТРАНСФЕРА ---
+    elif message.text == "Предложить трансфер 🤝":
+        if user_id not in CLUB_OWNERS and user_id != ADMIN_ID:
+            return
+
+        last_transfer = data[user_id_str].get("last_transfer_time", 0)
+        if time.time() - last_transfer < 3600 and user_id != ADMIN_ID:
+            remain = int((3600 - (time.time() - last_transfer)) / 60)
+            bot.send_message(message.chat.id, f"❌ Подождите еще {remain} мин.")
+            return
+
+        msg = bot.send_message(message.chat.id, "Введите @username игрока:")
+        bot.register_next_step_handler(msg, process_transfer_target)
+
+    elif message.text == "Завершение карьеры":
+        msg = bot.send_message(message.chat.id, "🚫 Напишите П.С. для завершения:")
+        bot.register_next_step_handler(msg, process_retirement)
 
     elif message.text == "Возвращение карьеры":
-        # Проверка таймера для обычных игроков
-        if message.from_user.id != ADMIN_ID:
-            last_retire_str = data[user_id].get("retire_date")
+        # Проверка 5 дней для обычных
+        if user_id != ADMIN_ID:
+            last_retire_str = data[user_id_str].get("retire_date")
             if last_retire_str:
                 last_retire = datetime.datetime.strptime(last_retire_str, "%Y-%m-%d %H:%M:%S")
                 days_passed = (datetime.datetime.now() - last_retire).days
                 if days_passed < RETIRE_LIMIT_DAYS:
-                    bot.send_message(message.chat.id, f"❌ Вернуться можно только через 5 дней!\nОсталось ждать: **{RETIRE_LIMIT_DAYS - days_passed} дн.**")
+                    bot.send_message(message.chat.id, f"❌ Ждите еще {RETIRE_LIMIT_DAYS - days_passed} дн.")
                     return
-
-        msg = bot.send_message(message.chat.id, "🔙 Напишите П.С. для возвращения:", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, process_return, user_info)
-
-    elif message.text == "Изменить ник":
-        if message.from_user.id == ADMIN_ID:
-            msg = bot.send_message(message.chat.id, "👑 Без очереди: вводи новый ник:", reply_markup=get_back_menu())
-            bot.register_next_step_handler(msg, process_nick_change)
-            return
-        # Обычная проверка ника...
-        last_change_str = data[user_id].get("last_nick_change")
-        if last_change_str:
-            last_change = datetime.datetime.strptime(last_change_str, "%Y-%m-%d %H:%M:%S")
-            if (datetime.datetime.now() - last_change).days < NICK_LIMIT_DAYS:
-                bot.send_message(message.chat.id, "❌ Рано менять ник!")
-                return
-        msg = bot.send_message(message.chat.id, "Вводи новый ник:", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, process_nick_change)
+        
+        data[user_id_str]["is_retired"] = False
+        save_data(data)
+        bot.send_message(message.chat.id, "🔙 Вы вернулись в карьеру!", reply_markup=get_main_menu(user_id))
 
     elif message.text == "Свободный агент":
-        msg = bot.send_message(message.chat.id, "🆓 Напишите П.С.:", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, send_to_channel, "Свободный агент", user_info)
-
-    elif message.text == "Свой текст":
-        msg = bot.send_message(message.chat.id, "📝 Введите текст:", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, send_to_channel, "Свой текст", user_info)
-
-    elif message.text == "Переход в клуб":
-        msg = bot.send_message(message.chat.id, "🏠 Введите: `Клуб, П.С.`", reply_markup=get_back_menu())
-        bot.register_next_step_handler(msg, process_club, user_info)
+        msg = bot.send_message(message.chat.id, "🆓 Напишите П.С.:")
+        bot.register_next_step_handler(msg, send_to_channel, "Свободный агент", data[user_id_str].get("rb_nick"))
 
     elif message.text == "Профиль":
-        status = "На пенсии ❌" if data[user_id].get("is_retired") else "Активен ✅"
-        bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}")
+        nick = data[user_id_str].get("rb_nick", "Не указан")
+        bot.send_message(message.chat.id, f"👤 Профиль\nНик: {nick}\nID: {user_id}")
 
-# --- СПЕЦИАЛЬНАЯ ЛОГИКА ---
+    elif message.text == "Изменить ник":
+        if user_id == ADMIN_ID:
+            msg = bot.send_message(message.chat.id, "Вводи новый ник:")
+            bot.register_next_step_handler(msg, process_nick_change)
+        else:
+            # Обычная проверка ника (7 дней)
+            last_change_str = data[user_id_str].get("last_nick_change")
+            if last_change_str:
+                last_change = datetime.datetime.strptime(last_change_str, "%Y-%m-%d %H:%M:%S")
+                if (datetime.datetime.now() - last_change).days < NICK_LIMIT_DAYS:
+                    bot.send_message(message.chat.id, "❌ Рано менять ник!")
+                    return
+            msg = bot.send_message(message.chat.id, "Вводи новый ник:")
+            bot.register_next_step_handler(msg, process_nick_change)
 
-def process_retirement(message, user_info):
-    if message.text == "⬅️ Назад":
-        bot.send_message(message.chat.id, "Отменено.", reply_markup=get_main_menu(message.from_user.id))
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+def process_transfer_target(message):
+    target_username = message.text.replace("@", "").lower().strip()
+    data = load_data()
+    target_id = None
+    for uid, udata in data.items():
+        if udata.get("username") == target_username:
+            target_id = uid
+            break
+    if not target_id:
+        bot.send_message(message.chat.id, "❌ Игрок не найден в базе бота.")
         return
+    club_name = CLUB_OWNERS.get(message.from_user.id, "Сборная")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"tr_acc_{message.from_user.id}"),
+               types.InlineKeyboardButton("❌ Отклонить", callback_data=f"tr_dec_{message.from_user.id}"))
+    bot.send_message(target_id, f"⚽️ Вам пришел запрос в клуб **{club_name}**!", reply_markup=markup, parse_mode="Markdown")
+    data[str(message.from_user.id)]["last_transfer_time"] = time.time()
+    save_data(data)
+    bot.send_message(message.chat.id, "🚀 Запрос отправлен!")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("tr_"))
+def callback_transfer(call):
+    data = load_data()
+    owner_id = call.data.split("_")[2]
+    player_nick = data.get(str(call.from_user.id), {}).get("rb_nick", "Игрок")
+    club_name = CLUB_OWNERS.get(int(owner_id), "Клуб")
+    if "acc" in call.data:
+        bot.edit_message_text("✅ Принято!", call.message.chat.id, call.message.message_id)
+        bot.send_message(owner_id, f"🔥 {player_nick} ПРИНЯЛ переход в {club_name}!")
+        bot.send_message(CHANNEL_ID, f"🏠 **ОФИЦИАЛЬНЫЙ ПЕРЕХОД**\n\n🎮 Игрок: {player_nick}\n🏢 Клуб: {club_name}")
+    else:
+        bot.edit_message_text("❌ Отклонено.", call.message.chat.id, call.message.message_id)
+        bot.send_message(owner_id, f"😔 {player_nick} ОТКАЗАЛСЯ от перехода.")
+
+def process_retirement(message):
     data = load_data()
     user_id = str(message.from_user.id)
     data[user_id]["is_retired"] = True
     data[user_id]["retire_date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
-    
-    report = f"📢 **ЗАВЕРШЕНИЕ КАРЬЕРЫ**\n\n{user_info}\n🖋 П.С.: {message.text}"
-    bot.send_message(CHANNEL_ID, report, parse_mode='Markdown')
-    bot.send_message(message.chat.id, "✅ Карьера завершена. Кнопка скрыта на 5 дней.", reply_markup=get_main_menu(message.from_user.id))
-
-def process_return(message, user_info):
-    if message.text == "⬅️ Назад":
-        bot.send_message(message.chat.id, "Отменено.", reply_markup=get_main_menu(message.from_user.id))
-        return
-    data = load_data()
-    user_id = str(message.from_user.id)
-    data[user_id]["is_retired"] = False
-    save_data(data)
-    
-    report = f"📢 **ВОЗВРАЩЕНИЕ В КАРЬЕРУ**\n\n{user_info}\n🖋 П.С.: {message.text}"
-    bot.send_message(CHANNEL_ID, report, parse_mode='Markdown')
-    bot.send_message(message.chat.id, "✅ С возвращением! Кнопка 'Завершение' снова доступна.", reply_markup=get_main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "❌ Карьера завершена!", reply_markup=get_main_menu(message.from_user.id))
 
 def process_nick_change(message):
-    if message.text == "⬅️ Назад":
-        bot.send_message(message.chat.id, "Отменено.", reply_markup=get_main_menu(message.from_user.id))
-        return
     new_nick = message.text.strip()
     data = load_data()
     user_id = str(message.from_user.id)
     data[user_id]["rb_nick"] = new_nick
     data[user_id]["last_nick_change"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
-    bot.send_message(message.chat.id, f"✅ Ник изменен на: **{new_nick}**", reply_markup=get_main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, f"✅ Ник изменен на: {new_nick}", reply_markup=get_main_menu(message.from_user.id))
 
-def send_to_channel(message, status, user_info):
-    if message.text == "⬅️ Назад":
-        bot.send_message(message.chat.id, "Отменено.", reply_markup=get_main_menu(message.from_user.id))
-        return
-    report = f"📢 **{status.upper()}**\n\n{user_info}\n🖋 П.С.: {message.text}"
-    bot.send_message(CHANNEL_ID, report, parse_mode='Markdown')
+def send_to_channel(message, status, nick):
+    report = f"📢 **{status.upper()}**\n🎮 Ник: {nick}\n🖋 П.С.: {message.text}"
+    bot.send_message(CHANNEL_ID, report)
     bot.send_message(message.chat.id, "✅ Опубликовано!", reply_markup=get_main_menu(message.from_user.id))
-
-def process_club(message, user_info):
-    if message.text == "⬅️ Назад":
-        bot.send_message(message.chat.id, "Отменено.", reply_markup=get_main_menu(message.from_user.id))
-        return
-    try:
-        parts = message.text.split(',')
-        report = f"🏠 **ПЕРЕХОД В КЛУБ**\n\n{user_info}\n🏢 Клуб: {parts[0].strip()}\n📝 П.С.: {parts[1].strip()}"
-        bot.send_message(CHANNEL_ID, report, parse_mode='Markdown')
-        bot.send_message(message.chat.id, "✅ Опубликовано!", reply_markup=get_main_menu(message.from_user.id))
-    except:
-        bot.send_message(message.chat.id, "⚠️ Ошибка! Пиши через запятую.", reply_markup=get_main_menu(message.from_user.id))
 
 if __name__ == "__main__":
     bot.infinity_polling()
