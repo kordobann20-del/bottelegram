@@ -18,7 +18,8 @@ CLUB_OWNERS = {
     7908040352: "Inter Milan",
     8169093601: "Bayern Munich",
     7138854880: "Albacete",
-    7710520171: "Qarabağ" # Новый клуб
+    7710520171: "Qarabağ",
+    8087187813: "ФК Террор"
 }
 # =============================================
 
@@ -45,7 +46,6 @@ def get_main_menu(user_id):
     
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     
-    # Логика кнопок карьеры
     if user_id == ADMIN_ID or not is_retired:
         markup.add("Завершение карьеры 🚫")
     if user_id == ADMIN_ID or is_retired:
@@ -53,7 +53,6 @@ def get_main_menu(user_id):
         
     markup.add("Свободный агент 🆓", "Свой текст 📝")
     
-    # Кнопка трансфера для владельцев
     if user_id in CLUB_OWNERS or user_id == ADMIN_ID:
         markup.add("Предложить трансфер 🤝")
         
@@ -104,31 +103,41 @@ def handle_text(message):
 
     if message.text == "Список клубов 📋":
         text = (
-            "❗️❕ **ОФИЦИАЛЬНЫЕ ТМ КЛУБЫ**\n\n"
+            "🏆 **ОФИЦИАЛЬНЫЕ ТМ КЛУБЫ**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
             "🇮🇹 Inter Milan — @Banditdontrealme\n"
             "🇩🇪 Bayern Munich — @EstavaoJr\n"
-            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @Nagisls\n\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @Nagisls\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Manchester City — ❓\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Manchester United — ❓\n"
+            "🇪🇸 Barcelona — ❓\n"
+            "🇮🇹 Napoli — ❓\n"
+            "🇵🇹 Sporting — ❓\n"
+            "🇩🇪 Borussia Dortmund — ❓\n"
+            "🇮🇹 Roma — ❓\n\n"
             "🔥 **КАСТОМНЫЕ ТМ КЛУБЫ**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
             "🇪🇸 Albacete — @Eoupapa\n"
-            "🇦🇿 Qarabağ — @Suleyman1453638"
+            "🇦🇿 Qarabağ — @Suleyman1453638\n"
+            "💀 ФК Террор — @Ez_Mbappe"
         )
         bot.send_message(message.chat.id, text)
 
     elif message.text == "Свой текст 📝":
-        msg = bot.send_message(message.chat.id, "Напишите текст сообщения, который хотите отправить в канал:")
+        msg = bot.send_message(message.chat.id, "💬 Напишите текст сообщения для канала:")
         bot.register_next_step_handler(msg, send_custom_text, rb_nick)
 
     elif message.text == "Предложить трансфер 🤝":
         if user_id not in CLUB_OWNERS and user_id != ADMIN_ID: return
         last_t = data[user_id_str].get("last_transfer_time", 0)
         if time.time() - last_t < 3600 and user_id != ADMIN_ID:
-            bot.send_message(message.chat.id, f"❌ КД! Ждите {int((3600-(time.time()-last_t))/60)} мин.")
+            bot.send_message(message.chat.id, f"❌ Подождите {int((3600-(time.time()-last_t))/60)} мин.")
             return
-        msg = bot.send_message(message.chat.id, "Введите @username игрока:")
+        msg = bot.send_message(message.chat.id, "🎯 Введите @username игрока:")
         bot.register_next_step_handler(msg, process_transfer_target)
 
     elif message.text == "Завершение карьеры 🚫":
-        msg = bot.send_message(message.chat.id, "🚫 Напишите причину завершения (П.С.):")
+        msg = bot.send_message(message.chat.id, "🚫 Напишите причину завершения:")
         bot.register_next_step_handler(msg, process_retirement)
 
     elif message.text == "Возвращение карьеры 🔙":
@@ -137,39 +146,39 @@ def handle_text(message):
             if last_r:
                 diff = datetime.datetime.now() - datetime.datetime.strptime(last_r, "%Y-%m-%d %H:%M:%S")
                 if diff.days < RETIRE_LIMIT_DAYS:
-                    bot.send_message(message.chat.id, f"❌ Ждать еще {RETIRE_LIMIT_DAYS - diff.days} дн.")
+                    bot.send_message(message.chat.id, f"❌ Рано! Осталось: {RETIRE_LIMIT_DAYS - diff.days} дн.")
                     return
         data[user_id_str]["is_retired"] = False
         save_data(data)
         bot.send_message(message.chat.id, "🔙 С возвращением!", reply_markup=get_main_menu(user_id))
 
     elif message.text == "Свободный агент 🆓":
-        msg = bot.send_message(message.chat.id, "Напишите П.С. к статусу Свободного Агента:")
+        msg = bot.send_message(message.chat.id, "📝 Напишите П.С.:")
         bot.register_next_step_handler(msg, send_sa_status, rb_nick)
 
     elif message.text == "Профиль 👤":
         status = "На пенсии ❌" if data[user_id_str].get("is_retired") else "Активен ✅"
-        bot.send_message(message.chat.id, f"👤 **Ваш Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}\n🆔 ID: `{user_id}`")
+        bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}\n🆔 ID: `{user_id}`")
 
     elif message.text == "Изменить ник ✏️":
         last_c = data[user_id_str].get("last_nick_change")
         if last_c and user_id != ADMIN_ID:
             diff = datetime.datetime.now() - datetime.datetime.strptime(last_c, "%Y-%m-%d %H:%M:%S")
             if diff.days < NICK_LIMIT_DAYS:
-                bot.send_message(message.chat.id, "❌ Рано менять ник!")
+                bot.send_message(message.chat.id, f"❌ Ждите {NICK_LIMIT_DAYS - diff.days} дн.")
                 return
-        msg = bot.send_message(message.chat.id, "Введите новый ник:")
+        msg = bot.send_message(message.chat.id, "✏️ Введите новый ник:")
         bot.register_next_step_handler(msg, update_nick)
 
 # --- ЛОГИКА ---
 
 def send_custom_text(message, nick):
-    report = f"📝 **СООБЩЕНИЕ ОТ ИГРОКА**\n\n🎮 Ник: {nick}\n💬 Текст: {message.text}"
+    report = f"📝 **СООБЩЕНИЕ ОТ ИГРОКА**\n\n👤 Игрок: {nick}\n💬 Текст: {message.text}"
     bot.send_message(CHANNEL_ID, report)
     bot.send_message(message.chat.id, "✅ Отправлено!")
 
 def send_sa_status(message, nick):
-    report = f"🆓 **СВОБОДНЫЙ АГЕНТ**\n\n🎮 Ник: {nick}\n🖋 П.С.: {message.text}"
+    report = f"🆓 **СВОБОДНЫЙ АГЕНТ**\n\n👤 Игрок: {nick}\n🖋 П.С.: {message.text}"
     bot.send_message(CHANNEL_ID, report)
     bot.send_message(message.chat.id, "✅ Опубликовано!")
 
@@ -179,14 +188,20 @@ def process_transfer_target(message):
     target_id = next((uid for uid, udata in data.items() if udata.get("username") == target_username), None)
     
     if not target_id:
-        bot.send_message(message.chat.id, "❌ Игрок не найден. Он должен запустить бота.")
+        bot.send_message(message.chat.id, "❌ Игрок не найден.")
         return
 
+    owner_username = f"@{message.from_user.username}" if message.from_user.username else "Владелец"
     club = CLUB_OWNERS.get(message.from_user.id, "Клуб")
+    
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"tr_acc_{message.from_user.id}"),
                types.InlineKeyboardButton("❌ Отклонить", callback_data=f"tr_dec_{message.from_user.id}"))
-    bot.send_message(target_id, f"⚽️ Вам пришел запрос в клуб **{club}**!", reply_markup=markup, parse_mode="Markdown")
+    
+    # ТУТ ДОБАВЛЕН ЮЗЕРНЕЙМ ВЛАДЕЛЬЦА
+    text = f"⚽️ **НОВЫЙ ЗАПРОС!**\n\n🏢 Клуб: **{club}**\n👤 Отправитель: {owner_username}\n\nВы хотите перейти в этот клуб?"
+    bot.send_message(target_id, text, reply_markup=markup, parse_mode="Markdown")
+    
     data[str(message.from_user.id)]["last_transfer_time"] = time.time()
     save_data(data)
     bot.send_message(message.chat.id, "🚀 Запрос отправлен!")
@@ -197,10 +212,11 @@ def callback_transfer(call):
     owner_id = int(call.data.split("_")[2])
     player_nick = data.get(str(call.from_user.id), {}).get("rb_nick", "Игрок")
     club = CLUB_OWNERS.get(owner_id, "Клуб")
+    
     if "acc" in call.data:
         bot.edit_message_text("✅ Вы приняли предложение!", call.message.chat.id, call.message.message_id)
         bot.send_message(owner_id, f"🔥 {player_nick} ПРИНЯЛ запрос в {club}!")
-        bot.send_message(CHANNEL_ID, f"🏠 **ОФИЦИАЛЬНЫЙ ПЕРЕХОД**\n\n🎮 Игрок: {player_nick}\n🏢 Клуб: {club}")
+        bot.send_message(CHANNEL_ID, f"🏠 **ОФИЦИАЛЬНЫЙ ПЕРЕХОД**\n\n🎮 Игрок: {player_nick}\n🏢 Клуб: {club}\n✅ Статус: Контракт подписан")
     else:
         bot.edit_message_text("❌ Вы отклонили предложение.", call.message.chat.id, call.message.message_id)
         bot.send_message(owner_id, f"😔 {player_nick} ОТКАЗАЛСЯ от перехода.")
@@ -211,7 +227,7 @@ def process_retirement(message):
     data[user_id]["is_retired"] = True
     data[user_id]["retire_date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
-    bot.send_message(message.chat.id, "❌ Карьера завершена!", reply_markup=get_main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "❌ Карьера завершена.", reply_markup=get_main_menu(message.from_user.id))
 
 def update_nick(message):
     data = load_data()
@@ -219,7 +235,7 @@ def update_nick(message):
     data[user_id]["rb_nick"] = message.text.strip()
     data[user_id]["last_nick_change"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
-    bot.send_message(message.chat.id, "✅ Ник изменен!", reply_markup=get_main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "✅ Ник обновлен!", reply_markup=get_main_menu(message.from_user.id))
 
 if __name__ == "__main__":
     bot.infinity_polling()
