@@ -10,6 +10,7 @@ TOKEN = os.getenv('TOKEN')
 CHANNEL_ID = '-1003740141875' 
 NICK_LIMIT_DAYS = 7 
 RETIRE_LIMIT_DAYS = 5
+COOLDOWN_SECONDS = 1800  # 30 минут в секундах
 ADMIN_ID = 5845609895
 
 # Владельцы клубов (ID: Название клуба)
@@ -104,6 +105,7 @@ def handle_text(message):
 
     rb_nick = data[user_id_str].get("rb_nick", "Без ника")
     tg_user = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
+    last_post_time = data[user_id_str].get("last_post_time", 0)
 
     if message.text == "Список клубов 📋":
         text = (
@@ -121,8 +123,20 @@ def handle_text(message):
         bot.send_message(message.chat.id, text)
 
     elif message.text == "Свой текст 📝":
+        if time.time() - last_post_time < COOLDOWN_SECONDS and user_id != ADMIN_ID:
+            rem = int((COOLDOWN_SECONDS - (time.time() - last_post_time)) / 60)
+            bot.send_message(message.chat.id, f"⏳ КД! Подождите еще {rem} мин.")
+            return
         msg = bot.send_message(message.chat.id, "💬 Напишите текст сообщения:", reply_markup=get_cancel_menu())
         bot.register_next_step_handler(msg, send_custom_text, rb_nick, tg_user)
+
+    elif message.text == "Свободный агент 🆓":
+        if time.time() - last_post_time < COOLDOWN_SECONDS and user_id != ADMIN_ID:
+            rem = int((COOLDOWN_SECONDS - (time.time() - last_post_time)) / 60)
+            bot.send_message(message.chat.id, f"⏳ КД! Подождите еще {rem} мин.")
+            return
+        msg = bot.send_message(message.chat.id, "📝 Напишите ваш П.С. к статусу:", reply_markup=get_cancel_menu())
+        bot.register_next_step_handler(msg, send_sa_status, rb_nick, tg_user)
 
     elif message.text == "Предложить трансфер 🤝":
         if user_id not in CLUB_OWNERS and user_id != ADMIN_ID: return
@@ -133,10 +147,6 @@ def handle_text(message):
         msg = bot.send_message(message.chat.id, "🚫 Напишите причину завершения карьеры:", reply_markup=get_cancel_menu())
         bot.register_next_step_handler(msg, process_retirement, rb_nick, tg_user)
 
-    elif message.text == "Свободный агент 🆓":
-        msg = bot.send_message(message.chat.id, "📝 Напишите ваш П.С. к статусу:", reply_markup=get_cancel_menu())
-        bot.register_next_step_handler(msg, send_sa_status, rb_nick, tg_user)
-
     elif message.text == "Изменить ник ✏️":
         msg = bot.send_message(message.chat.id, "✏️ Введите новый ник:", reply_markup=get_cancel_menu())
         bot.register_next_step_handler(msg, update_nick)
@@ -145,12 +155,15 @@ def handle_text(message):
         status = "На пенсии ❌" if data[user_id_str].get("is_retired") else "Активен ✅"
         bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}\n🆔 ID: `{user_id}`")
 
-# --- ЛОГИКА С ПРОВЕРКОЙ НА ОТМЕНУ ---
+# --- ЛОГИКА ---
 
 def send_custom_text(message, nick, tg_user):
     if message.text == "Отмена 🔙":
         bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
         return
+    data = load_data()
+    data[str(message.from_user.id)]["last_post_time"] = time.time()
+    save_data(data)
     bot.send_message(CHANNEL_ID, f"📝 **СООБЩЕНИЕ**\n👤 {nick} ({tg_user})\n💬 {message.text}")
     bot.send_message(message.chat.id, "✅ Отправлено!", reply_markup=get_main_menu(message.from_user.id))
 
@@ -158,6 +171,9 @@ def send_sa_status(message, nick, tg_user):
     if message.text == "Отмена 🔙":
         bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
         return
+    data = load_data()
+    data[str(message.from_user.id)]["last_post_time"] = time.time()
+    save_data(data)
     bot.send_message(CHANNEL_ID, f"🆓 **СВОБОДНЫЙ АГЕНТ**\n👤 {nick} ({tg_user})\n🖋 П.С.: {message.text}")
     bot.send_message(message.chat.id, "✅ Опубликовано!", reply_markup=get_main_menu(message.from_user.id))
 
