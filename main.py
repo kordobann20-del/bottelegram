@@ -20,8 +20,9 @@ CLUB_OWNERS = {
     8435557606: "Barcelona",
     5739041429: "Barcelona",
     7138854880: "Albacete",
-    8373009099: "Фиорентина",
-    6212776868: "Зенит"
+    8373009099: "Fiorentina",    # Владелец 1 @Maldini_756
+    7718973542: "Fiorentina",    # Владелец 2 @Amojvucu
+    6212776868: "Zenit"
 }
 # =============================================
 
@@ -112,16 +113,16 @@ def handle_text(message):
 
     if message.text == "Список клубов 📋":
         text = (
-            "🏆 **ОФИЦИАЛЬНЫЕ ТМ КЛУБЫ**\n━━━━━━━━━━━━━━━━━━━━\n"
+            "🏆 **OFFICIAL TM CLUBS**\n━━━━━━━━━━━━━━━━━━━━\n"
             "🇮🇹 Inter Milan — @Banditdontrealme\n"
             "🇪🇸 Real Madrid — @Ez_Mbappe\n"
             "🇩🇪 Bayern Munich — @EstavaoJr\n"
             "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @IlikeMBB\n"
             "🇪🇸 Barcelona — @Romanzik_1717 / @o17_misty\n\n"
-            "🔥 **КАСТОМНЫЕ ТМ КЛУБЫ**\n━━━━━━━━━━━━━━━━━━━━\n"
+            "🔥 **CUSTOM TM CLUBS**\n━━━━━━━━━━━━━━━━━━━━\n"
             "🇪🇸 Albacete — @Eoupapa\n"
-            "🇮🇹 Фиорентина — @Maldini_756\n"
-            "🇷🇺 Зенит — @NURIKBRO20145"
+            "🇮🇹 Fiorentina — @Maldini_756 / @Amojvucu\n"
+            "🇷🇺 Zenit — @NURIKBRO20145"
         )
         bot.send_message(message.chat.id, text)
 
