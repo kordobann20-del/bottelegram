@@ -8,19 +8,20 @@ import time
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv('TOKEN')
 CHANNEL_ID = '-1003740141875' 
-NICK_LIMIT_DAYS = 7 
-RETIRE_LIMIT_DAYS = 5
-COOLDOWN_SECONDS = 1800  # 30 минут в секундах
+COOLDOWN_SECONDS = 1800  # 30 минут
 ADMIN_ID = 5845609895
 
-# Владельцы клубов (ID: Название клуба)
+# Актуальный список владельцев
 CLUB_OWNERS = {
-    7932332909: "Arsenal",
+    6641683745: "Arsenal",
     7908040352: "Inter Milan",
     8169093601: "Bayern Munich",
+    8087187813: "Real Madrid",
+    8435557606: "Barcelona",
+    5739041429: "Barcelona",
     7138854880: "Albacete",
-    7710520171: "Qarabağ",
-    8087187813: "Real Madrid" 
+    8373009099: "Фиорентина",
+    6212776868: "Зенит"
 }
 # =============================================
 
@@ -28,16 +29,17 @@ bot = telebot.TeleBot(TOKEN)
 DATA_FILE = "users_data.json"
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except: return {}
-    return {}
+    if not os.path.exists(DATA_FILE): return {}
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except: return {}
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except: pass
 
 def get_main_menu(user_id):
     data = load_data()
@@ -66,14 +68,13 @@ def get_cancel_menu():
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    bot.clear_step_handler_by_chat_id(chat_id=message.chat.id)
     data = load_data()
     user_id = str(message.from_user.id)
-    username = message.from_user.username.lower() if message.from_user.username else "нет_юзернейма"
     
     if user_id not in data:
         data[user_id] = {"is_retired": False}
-    
-    data[user_id]["username"] = username
+    data[user_id]["username"] = message.from_user.username.lower() if message.from_user.username else "нет"
     save_data(data)
 
     if "rb_nick" not in data[user_id]:
@@ -105,7 +106,9 @@ def handle_text(message):
 
     rb_nick = data[user_id_str].get("rb_nick", "Без ника")
     tg_user = f"@{message.from_user.username}" if message.from_user.username else f"ID: {user_id}"
-    last_post_time = data[user_id_str].get("last_post_time", 0)
+    last_post = data[user_id_str].get("last_post_time", 0)
+
+    # --- КНОПКИ ---
 
     if message.text == "Список клубов 📋":
         text = (
@@ -113,26 +116,26 @@ def handle_text(message):
             "🇮🇹 Inter Milan — @Banditdontrealme\n"
             "🇪🇸 Real Madrid — @Ez_Mbappe\n"
             "🇩🇪 Bayern Munich — @EstavaoJr\n"
-            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @Nagisls\n"
-            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Man City — ❓\n"
-            "🇪🇸 Barcelona — ❓\n\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @IlikeMBB\n"
+            "🇪🇸 Barcelona — @Romanzik_1717 / @o17_misty\n\n"
             "🔥 **КАСТОМНЫЕ ТМ КЛУБЫ**\n━━━━━━━━━━━━━━━━━━━━\n"
             "🇪🇸 Albacete — @Eoupapa\n"
-            "🇦🇿 Qarabağ — @Suleyman1453638"
+            "🇮🇹 Фиорентина — @Maldini_756\n"
+            "🇷🇺 Зенит — @NURIKBRO20145"
         )
         bot.send_message(message.chat.id, text)
 
     elif message.text == "Свой текст 📝":
-        if time.time() - last_post_time < COOLDOWN_SECONDS and user_id != ADMIN_ID:
-            rem = int((COOLDOWN_SECONDS - (time.time() - last_post_time)) / 60)
+        if time.time() - last_post < COOLDOWN_SECONDS and user_id != ADMIN_ID:
+            rem = int((COOLDOWN_SECONDS - (time.time() - last_post)) / 60)
             bot.send_message(message.chat.id, f"⏳ КД! Подождите еще {rem} мин.")
             return
         msg = bot.send_message(message.chat.id, "💬 Напишите текст сообщения:", reply_markup=get_cancel_menu())
         bot.register_next_step_handler(msg, send_custom_text, rb_nick, tg_user)
 
     elif message.text == "Свободный агент 🆓":
-        if time.time() - last_post_time < COOLDOWN_SECONDS and user_id != ADMIN_ID:
-            rem = int((COOLDOWN_SECONDS - (time.time() - last_post_time)) / 60)
+        if time.time() - last_post < COOLDOWN_SECONDS and user_id != ADMIN_ID:
+            rem = int((COOLDOWN_SECONDS - (time.time() - last_post)) / 60)
             bot.send_message(message.chat.id, f"⏳ КД! Подождите еще {rem} мин.")
             return
         msg = bot.send_message(message.chat.id, "📝 Напишите ваш П.С. к статусу:", reply_markup=get_cancel_menu())
@@ -153,13 +156,13 @@ def handle_text(message):
         
     elif message.text == "Профиль 👤":
         status = "На пенсии ❌" if data[user_id_str].get("is_retired") else "Активен ✅"
-        bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}\n🆔 ID: `{user_id}`")
+        bot.send_message(message.chat.id, f"👤 **Профиль**\n\n🎮 Ник: `{rb_nick}`\n📊 Статус: {status}")
 
-# --- ЛОГИКА ---
+# --- ЛОГИКА ОБРАБОТКИ ---
 
 def send_custom_text(message, nick, tg_user):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🔙 Возврат в меню.", reply_markup=get_main_menu(message.from_user.id))
         return
     data = load_data()
     data[str(message.from_user.id)]["last_post_time"] = time.time()
@@ -169,7 +172,7 @@ def send_custom_text(message, nick, tg_user):
 
 def send_sa_status(message, nick, tg_user):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🔙 Возврат в меню.", reply_markup=get_main_menu(message.from_user.id))
         return
     data = load_data()
     data[str(message.from_user.id)]["last_post_time"] = time.time()
@@ -179,18 +182,17 @@ def send_sa_status(message, nick, tg_user):
 
 def process_retirement(message, nick, tg_user):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🔙 Возврат в меню.", reply_markup=get_main_menu(message.from_user.id))
         return
     data = load_data()
     data[str(message.from_user.id)]["is_retired"] = True
-    data[str(message.from_user.id)]["retire_date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_data(data)
     bot.send_message(CHANNEL_ID, f"🚫 **ЗАВЕРШЕНИЕ КАРЬЕРЫ**\n👤 {nick} ({tg_user})\n🖋 Причина: {message.text}")
     bot.send_message(message.chat.id, "❌ Карьера завершена.", reply_markup=get_main_menu(message.from_user.id))
 
 def process_transfer_target(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🔙 Возврат в меню.", reply_markup=get_main_menu(message.from_user.id))
         return
     target_username = message.text.replace("@", "").lower().strip()
     data = load_data()
@@ -224,7 +226,7 @@ def callback_transfer(call):
 
 def update_nick(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🔙 Возвращаю в меню", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🔙 Возврат в меню.", reply_markup=get_main_menu(message.from_user.id))
         return
     data = load_data()
     data[str(message.from_user.id)]["rb_nick"] = message.text.strip()
