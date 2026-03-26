@@ -12,17 +12,17 @@ COOLDOWN_SECONDS = 1800  # 30 минут
 ADMIN_ID = 5845609895
 
 # Актуальный список владельцев
+# Обновили: Барселона удалена, добавлен AC Milan для @o17_misty
 CLUB_OWNERS = {
     6641683745: "Arsenal",
     7908040352: "Inter Milan",
     8169093601: "Bayern Munich",
     8087187813: "Real Madrid",
-    8435557606: "Barcelona",
-    5739041429: "Barcelona",
     7138854880: "Albacete",
-    8373009099: "Fiorentina",    # Владелец 1 @Maldini_756
-    7718973542: "Fiorentina",    # Владелец 2 @Amojvucu
-    6212776868: "Zenit"
+    8373009099: "Fiorentina",
+    7718973542: "Fiorentina",
+    6212776868: "Zenit",
+    5739041429: "AC Milan"       # Владелец @o17_misty
 }
 # =============================================
 
@@ -112,14 +112,15 @@ def handle_text(message):
     # --- КНОПКИ ---
 
     if message.text == "Список клубов 📋":
+        # Обновленный список: без Барселоны, добавлен AC Milan в кастомные
         text = (
             "🏆 **OFFICIAL TM CLUBS**\n━━━━━━━━━━━━━━━━━━━━\n"
             "🇮🇹 Inter Milan — @Banditdontrealme\n"
             "🇪🇸 Real Madrid — @Ez_Mbappe\n"
             "🇩🇪 Bayern Munich — @EstavaoJr\n"
-            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @IlikeMBB\n"
-            "🇪🇸 Barcelona — @Romanzik_1717 / @o17_misty\n\n"
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Arsenal — @IlikeMBB\n\n"
             "🔥 **CUSTOM TM CLUBS**\n━━━━━━━━━━━━━━━━━━━━\n"
+            "🇮🇹 AC Milan — @o17_misty\n"
             "🇪🇸 Albacete — @Eoupapa\n"
             "🇮🇹 Fiorentina — @Maldini_756 / @Amojvucu\n"
             "🇷🇺 Zenit — @NURIKBRO20145"
