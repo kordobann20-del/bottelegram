@@ -4,19 +4,18 @@ import json
 import os
 import time
 import logging
-import re
 
 # =================================================================
-# КОНФИГУРАЦИЯ И НАСТРОЙКИ
+# КОНФИГУРАЦИЯ
 # =================================================================
 
-TOKEN = os.getenv('TOKEN') # Убедись, что токен вставлен правильно
+TOKEN = os.getenv('TOKEN') 
 CHANNEL_ID = '-1003740141875' 
 
-# ГЛАВНЫЙ АДМИНИСТРАТОР
-SUPER_ADMIN = "nazikrrk" 
+# ГЛАВНЫЙ АДМИНИСТРАТОР (Твой юзернейм без @)
+SUPER_ADMIN = "Nazikrrk" 
 
-# СПИСОК ВЛАДЕЛЬЦЕВ КЛУБОВ (КОНСТАНТА)
+# Список владельцев клубов по умолчанию (для проверки прав на трансферы)
 CLUB_OWNERS_LIST = {
     "banditdontrealme": "Inter Milan 🇮🇹",
     "ez_mbappe": "Real Madrid 🇪🇸",
@@ -33,105 +32,100 @@ CLUB_OWNERS_LIST = {
 }
 
 bot = telebot.TeleBot(TOKEN)
-DATA_FILE = "transfer_market_database.json"
+DATA_FILE = "tm_pro_v5_database.json"
+
 logging.basicConfig(level=logging.INFO)
 
 # =================================================================
-# СИСТЕМА ХРАНЕНИЯ ДАННЫХ
+# СИСТЕМА ДАННЫХ (JSON)
 # =================================================================
 
-def load_all_data():
-    """Загрузка всей базы данных из файла"""
+def load_db():
+    """Загрузка базы данных с проверкой на существование"""
     if not os.path.exists(DATA_FILE):
-        default_data = {
+        return {
             "users": {},
-            "admins": [SUPER_ADMIN],
+            "admins": [SUPER_ADMIN.lower()],
             "config": {
-                "top_clubs_text": "⭐ **ТОП КЛУБОВ ТМ**\n\nМесто 1: Bayern Munich\nМесто 2: Real Madrid",
-                "clubs_list_text": "🏆 **СПИСОК ОФИЦИАЛЬНЫХ КЛУБОВ**\n\n1. Inter Milan\n2. Real Madrid\n3. Bayern Munich"
+                "top_clubs_text": "🏆 ТОП КЛУБОВ\n(Настройте через админ-панель)",
+                "clubs_list_text": "📋 СПИСОК КЛУБОВ\n(Настройте через админ-панель)"
             }
         }
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_data, f, ensure_ascii=False, indent=4)
-        return default_data
-    
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:
-        logging.error(f"Ошибка чтения базы: {e}")
-        return {"users": {}, "admins": [SUPER_ADMIN], "config": {}}
+    except:
+        return {"users": {}, "admins": [SUPER_ADMIN.lower()], "config": {}}
 
-def save_all_data(data):
-    """Сохранение всей базы данных в файл"""
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        logging.error(f"Ошибка сохранения базы: {e}")
+def save_db(data):
+    """Сохранение базы данных"""
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 # =================================================================
-# СИСТЕМА КУЛДАУНОВ (ОГРАНИЧЕНИЕ ПО ВРЕМЕНИ)
+# СИСТЕМА ТАЙМЕРОВ (КД)
 # =================================================================
 
-def check_action_cooldown(user_id, action_name, cooldown_seconds):
-    """Проверяет, прошло ли нужное время с последнего действия"""
-    data = load_all_data()
-    uid = str(user_id)
-    
-    if uid not in data["users"]:
-        return True, 0
-    
-    last_time = data["users"][uid].get("cooldown_timers", {}).get(action_name, 0)
-    elapsed = time.time() - last_time
-    
-    if elapsed < cooldown_seconds:
-        remaining = int(cooldown_seconds - elapsed)
-        return False, remaining
-    return True, 0
-
-def register_action_time(user_id, action_name):
-    """Записывает время совершения действия"""
-    data = load_all_data()
-    uid = str(user_id)
-    
-    if "cooldown_timers" not in data["users"][uid]:
-        data["users"][uid]["cooldown_timers"] = {}
-    
-    data["users"][uid]["cooldown_timers"][action_name] = time.time()
-    save_all_data(data)
-
-# =================================================================
-# КЛАВИАТУРЫ (ИНТЕРФЕЙС)
-# =================================================================
-
-def main_menu_keyboard(user_id, username):
-    data = load_all_data()
-    uid_str = str(user_id)
-    u_info = data["users"].get(uid_str, {})
+def check_cooldown(user_id, username, action, seconds):
+    """
+    Проверка кулдауна.
+    ДЛЯ ВЛАДЕЛЬЦА (@Nazikrrk) И АДМИНОВ КД ВСЕГДА 0.
+    """
+    db = load_db()
     uname_low = (username or "").lower()
-    is_bot_admin = uname_low in data["admins"]
+    
+    # Если ты или админ — ограничений нет
+    if uname_low in db["admins"]:
+        return False, 0
+    
+    uid_str = str(user_id)
+    if uid_str not in db["users"]:
+        return False, 0
+    
+    last_time = db["users"][uid_str].get("cooldowns", {}).get(action, 0)
+    diff = time.time() - last_time
+    
+    if diff < seconds:
+        return True, int(seconds - diff)
+    return False, 0
+
+def set_cooldown(user_id, action):
+    """Запись времени последнего действия"""
+    db = load_db()
+    uid_str = str(user_id)
+    if "cooldowns" not in db["users"][uid_str]:
+        db["users"][uid_str]["cooldowns"] = {}
+    db["users"][uid_str]["cooldowns"][action] = time.time()
+    save_db(db)
+
+# =================================================================
+# ИНТЕРФЕЙС (КЛАВИАТУРЫ)
+# =================================================================
+
+def get_main_kb(user_id, username):
+    db = load_db()
+    uid_str = str(user_id)
+    u_info = db["users"].get(uid_str, {})
+    uname_low = (username or "").lower()
+    is_admin = uname_low in db["admins"]
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     
-    # Кнопка админа (если есть права)
-    if is_bot_admin:
+    if is_admin:
         markup.add(types.KeyboardButton("👑 Админ Панель"))
 
-    # Если игрок завершил карьеру
-    if u_info.get("is_retired", False):
+    if u_info.get("is_retired"):
         markup.add(types.KeyboardButton("Возвращение карьеры 🔙"))
         markup.add(types.KeyboardButton("Написать админам 📩"))
         markup.add(types.KeyboardButton("Список клубов 📋"), types.KeyboardButton("Топ клубов 🏆"))
         markup.add(types.KeyboardButton("Профиль 👤"))
         return markup
 
-    # Стандартные кнопки для активных игроков
     markup.add(types.KeyboardButton("Свободный агент 🆓"), types.KeyboardButton("Свой текст 📝"))
     
-    # Проверка на владение клубом (для кнопки трансферов)
-    is_club_boss = (uname_low in CLUB_OWNERS_LIST or u_info.get("owned_club") is not None or is_bot_admin)
-    if is_club_boss:
+    # Проверка прав на трансферы (Владельцы, Личные влд, Админы)
+    is_owner = (uname_low in CLUB_OWNERS_LIST or u_info.get("owned_club") or is_admin)
+    if is_owner:
         markup.add(types.KeyboardButton("Предложить трансфер 🤝"))
 
     markup.add(types.KeyboardButton("Список клубов 📋"), types.KeyboardButton("Топ клубов 🏆"))
@@ -140,369 +134,367 @@ def main_menu_keyboard(user_id, username):
     
     return markup
 
-def admin_panel_keyboard(username):
+def get_admin_kb(username):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(types.KeyboardButton("🚫 Забанить"), types.KeyboardButton("✅ Разбанить"))
-    markup.add(types.KeyboardButton("🔑 Дать влд"), types.KeyboardButton("🗑 Снять влд"))
+    markup.add("🚫 Забанить", "✅ Разбанить")
+    markup.add("🔑 Дать влд", "🗑 Снять влд")
     
-    # Только Супер Админ видит управление админ-составом
-    if username.lower() == SUPER_ADMIN:
-        markup.add(types.KeyboardButton("⭐ Дать админку"), types.KeyboardButton("❌ Снять админку"))
-    
-    markup.add(types.KeyboardButton("📝 Изменить список"), types.KeyboardButton("🔥 Изменить ТОП"))
-    markup.add(types.KeyboardButton("🔙 Назад в меню"))
+    if username.lower() == SUPER_ADMIN.lower():
+        markup.add("⭐ Дать админку", "❌ Снять админку")
+        
+    markup.add("📝 Изменить список", "🔥 Изменить ТОП")
+    markup.add("🔙 Назад в меню")
     return markup
 
-def cancel_action_keyboard():
+def get_cancel_kb():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("Отмена 🔙"))
+    markup.add("Отмена 🔙")
     return markup
 
 # =================================================================
-# ВСПОМОГАТЕЛЬНЫЕ ИНСТРУМЕНТЫ
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =================================================================
 
-def get_user_id_by_tag(tag):
-    """Поиск ID пользователя в базе по его @username"""
-    tag = tag.replace("@", "").lower().strip()
-    data = load_all_data()
-    for uid, info in data["users"].items():
-        if info.get("username") == tag:
+def find_user_by_username(target_username):
+    target_username = target_username.replace("@", "").lower().strip()
+    db = load_db()
+    for uid, info in db["users"].items():
+        if info.get("username") == target_username:
             return uid
     return None
 
 # =================================================================
-# ЛОГИКА ШАГОВ (NEXT STEP HANDLERS)
+# ОБРАБОТЧИКИ ШАГОВ (NEXT STEP)
 # =================================================================
 
-def process_nickname_registration(message):
+def step_register_nickname(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "❌ Регистрация отменена. Используйте /start.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "❌ Регистрация прервана. Напишите /start снова.", reply_markup=types.ReplyKeyboardRemove())
         return
-    if not message.text or len(message.text) < 2:
-        msg = bot.send_message(message.chat.id, "⚠️ Ник слишком короткий. Введите заново:")
-        bot.register_next_step_handler(msg, process_nickname_registration)
+    if not message.text:
+        msg = bot.send_message(message.chat.id, "⚠️ Введите текст ника:")
+        bot.register_next_step_handler(msg, step_register_nickname)
         return
-    
-    data = load_all_data()
-    uid = str(message.from_user.id)
-    data["users"][uid]["rb_nick"] = message.text.strip()
-    save_all_data(data)
-    
-    bot.send_message(message.chat.id, f"✅ Ваш ник {message.text} успешно привязан!", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        
+    db = load_db()
+    db["users"][str(message.from_user.id)]["rb_nick"] = message.text.strip()
+    save_db(db)
+    bot.send_message(message.chat.id, f"✅ Ник {message.text} сохранен!", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
 
-def process_nickname_update(message):
+def step_change_nickname(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
         return
     
-    # Кулдаун 7 дней (604800 секунд)
-    can_act, wait_time = check_action_cooldown(message.from_user.id, "nickname_change", 604800)
-    if not can_act:
-        days_left = wait_time // 86400
-        bot.send_message(message.chat.id, f"⚠️ Слишком часто! Изменить ник можно будет через {days_left} дн.")
+    on_cd, wait = check_cooldown(message.from_user.id, message.from_user.username, "nick_change", 604800) # 7 дней
+    if on_cd:
+        bot.send_message(message.chat.id, f"⚠️ Лимит смены ника! Осталось ждать: {wait // 3600} часов.")
         return
 
-    data = load_all_data()
-    uid = str(message.from_user.id)
-    data["users"][uid]["rb_nick"] = message.text.strip()
-    save_all_data(data)
-    register_action_time(message.from_user.id, "nickname_change")
-    
-    bot.send_message(message.chat.id, "✅ Ник успешно обновлен!", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+    db = load_db()
+    db["users"][str(message.from_user.id)]["rb_nick"] = message.text.strip()
+    save_db(db)
+    set_cooldown(message.from_user.id, "nick_change")
+    bot.send_message(message.chat.id, "✅ Ник успешно изменен!", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
 
-def process_message_to_support(message):
+def step_send_report(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
         return
     
-    # Кулдаун 20 минут (1200 секунд)
-    can_act, wait_time = check_action_cooldown(message.from_user.id, "support_ticket", 1200)
-    if not can_act:
-        bot.send_message(message.chat.id, f"⚠️ Вы уже писали админам. Подождите {wait_time // 60} мин.")
+    on_cd, wait = check_cooldown(message.from_user.id, message.from_user.username, "report", 1200) # 20 мин
+    if on_cd:
+        bot.send_message(message.chat.id, f"⚠️ Слишком часто! Ждите {wait // 60} мин.")
         return
 
-    data = load_all_data()
-    sender_tag = f"@{message.from_user.username}" if message.from_user.username else f"ID {message.from_user.id}"
+    db = load_db()
+    sender = f"@{message.from_user.username}" if message.from_user.username else f"ID: {message.from_user.id}"
+    alert = f"📩 **ОБРАЩЕНИЕ К АДМИНАМ**\n👤 От: {sender}\n💬 Текст: {message.text}"
     
-    admin_alert = f"📩 **НОВОЕ ОБРАЩЕНИЕ**\n👤 Отправитель: {sender_tag}\n💬 Сообщение: {message.text}"
-    
-    # Отправка всем админам из списка
-    count = 0
-    for admin_username in data["admins"]:
-        target_admin_id = get_user_id_by_tag(admin_username)
-        if target_admin_id:
+    sent = False
+    for adm_name in db["admins"]:
+        adm_id = find_user_by_username(adm_name)
+        if adm_id:
             try:
-                bot.send_message(target_admin_id, admin_alert, parse_mode="Markdown")
-                count += 1
+                bot.send_message(adm_id, alert, parse_mode="Markdown")
+                sent = True
             except: pass
     
-    if count > 0:
-        register_action_time(message.from_user.id, "support_ticket")
-        bot.send_message(message.chat.id, "✅ Ваше сообщение передано администрации!", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+    if sent:
+        set_cooldown(message.from_user.id, "report")
+        bot.send_message(message.chat.id, "✅ Ваше сообщение отправлено админам!", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
     else:
-        bot.send_message(message.chat.id, "❌ Ошибка: в данный момент админы недоступны.")
+        bot.send_message(message.chat.id, "❌ Сейчас нет активных админов.")
 
-def process_channel_custom_post(message):
+def step_custom_announcement(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
         return
     
-    # Кулдаун 12 часов (43200 секунд)
-    can_act, wait_time = check_action_cooldown(message.from_user.id, "channel_post", 43200)
-    if not can_act:
-        bot.send_message(message.chat.id, f"⚠️ Лимит! Вы сможете отправить текст через {wait_time // 3600} ч.")
+    # КД 12 часов
+    on_cd, wait = check_cooldown(message.from_user.id, message.from_user.username, "announcement", 43200)
+    if on_cd:
+        bot.send_message(message.chat.id, f"⚠️ Вы сможете написать через {wait // 3600} ч. { (wait % 3600) // 60 } мин.")
         return
 
-    data = load_all_data()
-    uid = str(message.from_user.id)
-    nick = data["users"][uid].get("rb_nick", "Игрок")
-    tag = f"@{message.from_user.username}" if message.from_user.username else "Юзернейм скрыт"
+    db = load_db()
+    nick = db["users"][str(message.from_user.id)].get("rb_nick", "Игрок")
+    tag = f"@{message.from_user.username}" if message.from_user.username else "Скрыт"
     
     try:
-        # Отправляем БЕЗ Markdown во избежание ошибки 400
-        final_text = f"📝 НОВОЕ СООБЩЕНИЕ\n👤 Игрок: {nick} ({tag})\n\n💬 Текст:\n{message.text}"
-        bot.send_message(CHANNEL_ID, final_text)
-        register_action_time(message.from_user.id, "channel_post")
-        bot.send_message(message.chat.id, "✅ Ваш пост успешно опубликован!", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        # Отправляем БЕЗ Markdown чтобы не ловить ошибку 400 на спецсимволах пользователя
+        final_msg = f"📝 НОВОЕ СООБЩЕНИЕ\n👤 От: {nick} ({tag})\n💬 Текст: {message.text}"
+        bot.send_message(CHANNEL_ID, final_msg)
+        set_cooldown(message.from_user.id, "announcement")
+        bot.send_message(message.chat.id, "✅ Опубликовано в канале!", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка публикации: Бот не админ или канал недоступен.")
+        bot.send_message(message.chat.id, "❌ Бот не может отправить сообщение в канал. Проверьте права.")
 
-def process_transfer_offer(message, sender_club_name):
+def step_send_contract(message, club):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
         return
     
-    # Кулдаун 3 минуты (180 секунд)
-    can_act, wait_time = check_action_cooldown(message.from_user.id, "transfer_offer", 180)
-    if not can_act:
-        bot.send_message(message.chat.id, f"⚠️ Подождите {wait_time} сек. перед следующим предложением.")
-        return
-
-    target_uid = get_user_id_by_tag(message.text)
+    target_uid = find_user_by_username(message.text)
     if not target_uid:
-        bot.send_message(message.chat.id, "❌ Этот игрок не найден. Он должен зайти в бота хотя бы раз.")
+        bot.send_message(message.chat.id, "❌ Пользователь не найден в базе бота.")
         return
 
-    inline_kb = types.InlineKeyboardMarkup()
-    inline_kb.add(
-        types.InlineKeyboardButton("✅ Принять", callback_data=f"contract_ok_{message.from_user.id}"),
-        types.InlineKeyboardButton("❌ Отклонить", callback_data=f"contract_no_{message.from_user.id}")
-    )
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("✅ Принять", callback_data=f"tr_yes_{message.from_user.id}"),
+           types.InlineKeyboardButton("❌ Отклонить", callback_data=f"tr_no_{message.from_user.id}"))
     
     try:
-        bot.send_message(target_uid, f"⚽️ **ВАМ ПРЕДЛОЖИЛИ КОНТРАКТ!**\n🏢 Клуб: {sender_club_name}\n👤 Отправитель: @{message.from_user.username}", reply_markup=inline_kb, parse_mode="Markdown")
-        register_action_time(message.from_user.id, "transfer_offer")
-        bot.send_message(message.chat.id, "✅ Контракт успешно отправлен игроку!", reply_markup=main_menu_keyboard(message.from_user.id, message.from_user.username))
+        bot.send_message(target_uid, f"⚽️ **ВАМ ПРЕДЛОЖИЛИ КОНТРАКТ!**\n🏢 Клуб: {club}\n👤 Отправитель: @{message.from_user.username}", reply_markup=kb, parse_mode="Markdown")
+        bot.send_message(message.chat.id, "✅ Запрос отправлен игроку!", reply_markup=get_main_kb(message.from_user.id, message.from_user.username))
     except:
-        bot.send_message(message.chat.id, "❌ Не удалось отправить сообщение (возможно, игрок заблокировал бота).")
+        bot.send_message(message.chat.id, "❌ Не удалось отправить сообщение игроку.")
 
 # =================================================================
-# АДМИНИСТРАТИВНЫЕ ШАГИ (ОБРАБОТКА)
+# АДМИНИСТРАТИВНЫЕ ФУНКЦИИ (ПОДРОБНО)
 # =================================================================
 
-def admin_step_ban_user(message):
+def step_admin_ban(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=admin_panel_keyboard(message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_admin_kb(message.from_user.username))
         return
-    target_id = get_user_id_by_tag(message.text)
-    if target_id:
-        data = load_all_data()
-        data["users"][target_id]["is_banned"] = True
-        save_all_data(data)
-        bot.send_message(message.chat.id, f"✅ Пользователь {message.text} забанен!")
+    uid = find_user_by_username(message.text)
+    if uid:
+        db = load_db()
+        db["users"][uid]["is_banned"] = True
+        save_db(db)
+        bot.send_message(message.chat.id, f"✅ @{message.text} забанен!")
     else:
-        bot.send_message(message.chat.id, "❌ Пользователь не найден.")
+        bot.send_message(message.chat.id, "❌ Не найден.")
 
-def admin_step_unban_user(message):
+def step_admin_unban(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=admin_panel_keyboard(message.from_user.username))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_admin_kb(message.from_user.username))
         return
-    target_id = get_user_id_by_tag(message.text)
-    if target_id:
-        data = load_all_data()
-        data["users"][target_id]["is_banned"] = False
-        save_all_data(data)
-        bot.send_message(message.chat.id, f"✅ Пользователь {message.text} разбанен!")
+    uid = find_user_by_username(message.text)
+    if uid:
+        db = load_db()
+        db["users"][uid]["is_banned"] = False
+        save_db(db)
+        bot.send_message(message.chat.id, f"✅ @{message.text} разбанен!")
     else:
-        bot.send_message(message.chat.id, "❌ Пользователь не найден.")
+        bot.send_message(message.chat.id, "❌ Не найден.")
 
-def admin_step_give_admin_rights(message):
+def step_admin_add_admin(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=admin_panel_keyboard(SUPER_ADMIN))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_admin_kb(SUPER_ADMIN))
         return
-    data = load_all_data()
-    clean_tag = message.text.replace("@", "").lower().strip()
-    if clean_tag not in data["admins"]:
-        data["admins"].append(clean_tag)
-        save_all_data(data)
-        bot.send_message(message.chat.id, f"✅ @{clean_tag} назначен администратором!")
+    tag = message.text.replace("@", "").lower().strip()
+    db = load_db()
+    if tag not in db["admins"]:
+        db["admins"].append(tag)
+        save_db(db)
+        bot.send_message(message.chat.id, f"✅ @{tag} теперь администратор!")
     else:
-        bot.send_message(message.chat.id, "⚠️ Пользователь уже администратор.")
+        bot.send_message(message.chat.id, "⚠️ Уже в списке.")
 
-def admin_step_remove_admin_rights(message):
+def step_admin_edit_list(message):
     if message.text == "Отмена 🔙":
-        bot.send_message(message.chat.id, "🏠 Отменено.", reply_markup=admin_panel_keyboard(SUPER_ADMIN))
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_admin_kb(message.from_user.username))
         return
-    data = load_all_data()
-    clean_tag = message.text.replace("@", "").lower().strip()
-    if clean_tag == SUPER_ADMIN:
-        bot.send_message(message.chat.id, "❌ Нельзя лишить прав главного админа!")
+    db = load_db()
+    db["config"]["clubs_list_text"] = message.text
+    save_db(db)
+    bot.send_message(message.chat.id, "✅ Список клубов обновлен!")
+
+def step_admin_edit_top(message):
+    if message.text == "Отмена 🔙":
+        bot.send_message(message.chat.id, "🏠 Отмена.", reply_markup=get_admin_kb(message.from_user.username))
         return
-    if clean_tag in data["admins"]:
-        data["admins"].remove(clean_tag)
-        save_all_data(data)
-        bot.send_message(message.chat.id, f"✅ @{clean_tag} больше не администратор.")
-    else:
-        bot.send_message(message.chat.id, "⚠️ Его нет в списке админов.")
+    db = load_db()
+    db["config"]["top_clubs_text"] = message.text
+    save_db(db)
+    bot.send_message(message.chat.id, "✅ ТОП обновлен!")
 
 # =================================================================
-# ОБРАБОТКА КОМАНД И ГЛАВНОЕ МЕНЮ
+# ОСНОВНОЙ ЦИКЛ ОБРАБОТКИ
 # =================================================================
 
 @bot.message_handler(commands=['start'])
-def command_start_handler(message):
+def cmd_start_handler(message):
     bot.clear_step_handler_by_chat_id(message.chat.id)
-    data = load_all_data()
+    db = load_db()
     uid = str(message.from_user.id)
-    uname = (message.from_user.username or "none").lower()
+    uname = (message.from_user.username or "нет").lower()
     
-    # Инициализация нового пользователя
-    if uid not in data["users"]:
-        data["users"][uid] = {
+    if uid not in db["users"]:
+        db["users"][uid] = {
             "username": uname,
             "rb_nick": None,
             "is_retired": False,
             "is_banned": False,
             "owned_club": None,
-            "cooldown_timers": {}
+            "cooldowns": {}
         }
     else:
-        data["users"][uid]["username"] = uname
+        db["users"][uid]["username"] = uname
     
-    save_all_data(data)
+    save_db(db)
 
-    if data["users"][uid].get("is_banned") and uname != SUPER_ADMIN:
-        bot.send_message(message.chat.id, "🚫 Доступ заблокирован администрацией.")
+    # Проверка на бан
+    if db["users"][uid].get("is_banned") and uname != SUPER_ADMIN.lower():
+        bot.send_message(message.chat.id, "🚫 Вы заблокированы администрацией.")
         return
 
-    # Если ник не задан — просим ввести
-    if not data["users"][uid].get("rb_nick"):
-        msg = bot.send_message(message.chat.id, "👋 Добро пожаловать!\nВведите ваш **Ник в Roblox** для продолжения:", parse_mode="Markdown", reply_markup=cancel_action_keyboard())
-        bot.register_next_step_handler(msg, process_nickname_registration)
+    # Если ник не введен
+    if not db["users"][uid].get("rb_nick"):
+        msg = bot.send_message(message.chat.id, "👋 Привет! Для работы с ботом введи свой ник в Roblox:", reply_markup=get_cancel_kb())
+        bot.register_next_step_handler(msg, step_register_nickname)
     else:
-        bot.send_message(message.chat.id, "🔘 Вы в главном меню:", reply_markup=main_menu_keyboard(message.from_user.id, uname))
+        bot.send_message(message.chat.id, "🔘 Выберите нужный раздел:", reply_markup=get_main_kb(message.from_user.id, uname))
 
 @bot.message_handler(content_types=['text'])
-def general_text_handler(message):
+def text_handler(message):
     uid = str(message.from_user.id)
     uname = (message.from_user.username or "").lower()
-    data = load_all_data()
+    db = load_db()
     
-    if uid not in data["users"]: return
-    user_info = data["users"][uid]
-    is_admin = uname in data["admins"]
+    if uid not in db["users"]: return
+    u_info = db["users"][uid]
+    is_admin = uname in db["admins"]
 
-    if user_info.get("is_banned") and uname != SUPER_ADMIN: return
+    # Блок забаненных
+    if u_info.get("is_banned") and uname != SUPER_ADMIN.lower(): return
 
-    # --- СЕКЦИЯ АДМИНИСТРАТОРА ---
+    # --- КНОПКИ АДМИНА ---
     if message.text == "👑 Админ Панель" and is_admin:
-        bot.send_message(message.chat.id, "⚙️ Панель управления:", reply_markup=admin_panel_keyboard(uname))
+        bot.send_message(message.chat.id, "🛠 Режим администратора:", reply_markup=get_admin_kb(uname))
         return
 
     if message.text == "🔙 Назад в меню":
-        bot.send_message(message.chat.id, "🏠 Возвращаю в меню:", reply_markup=main_menu_keyboard(message.from_user.id, uname))
+        bot.send_message(message.chat.id, "🏠 Главное меню:", reply_markup=get_main_kb(message.from_user.id, uname))
         return
 
     if is_admin:
         if message.text == "🚫 Забанить":
-            msg = bot.send_message(message.chat.id, "Введите @username для бана:", reply_markup=cancel_action_keyboard())
-            bot.register_next_step_handler(msg, admin_step_ban_user)
+            m = bot.send_message(message.chat.id, "Введите @username для бана:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_admin_ban)
             return
-        if message.text == "✅ Разбанить":
-            msg = bot.send_message(message.chat.id, "Введите @username для разбана:", reply_markup=cancel_action_keyboard())
-            bot.register_next_step_handler(msg, admin_step_unban_user)
+        elif message.text == "✅ Разбанить":
+            m = bot.send_message(message.chat.id, "Введите @username для разбана:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_admin_unban)
             return
-        if message.text == "⭐ Дать админку" and uname == SUPER_ADMIN:
-            msg = bot.send_message(message.chat.id, "Кому дать админку? (@username):", reply_markup=cancel_action_keyboard())
-            bot.register_next_step_handler(msg, admin_step_give_admin_rights)
+        elif message.text == "⭐ Дать админку" and uname == SUPER_ADMIN.lower():
+            m = bot.send_message(message.chat.id, "Введите @username:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_admin_add_admin)
             return
-        if message.text == "❌ Снять админку" and uname == SUPER_ADMIN:
-            msg = bot.send_message(message.chat.id, "У кого снять права? (@username):", reply_markup=cancel_action_keyboard())
-            bot.register_next_step_handler(msg, admin_step_remove_admin_rights)
+        elif message.text == "📝 Изменить список":
+            m = bot.send_message(message.chat.id, "Введите новый текст списка клубов:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_admin_edit_list)
             return
-        # (Остальные админ-механики по аналогии)
+        elif message.text == "🔥 Изменить ТОП":
+            m = bot.send_message(message.chat.id, "Введите новый текст ТОПа:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_admin_edit_top)
+            return
 
-    # --- СЕКЦИЯ ПОЛЬЗОВАТЕЛЯ ---
-    if message.text == "Написать админам 📩":
-        msg = bot.send_message(message.chat.id, "✍️ Опишите ваш вопрос (Лимит: 1 раз в 20 мин):", reply_markup=cancel_action_keyboard())
-        bot.register_next_step_handler(msg, process_message_to_support)
-
-    elif message.text == "Изменить ник ✏️":
-        msg = bot.send_message(message.chat.id, "✏️ Введите новый ник в Roblox (Лимит: раз в 7 дней):", reply_markup=cancel_action_keyboard())
-        bot.register_next_step_handler(msg, process_nickname_update)
+    # --- КНОПКИ ИГРОКА ---
+    if message.text == "Свободный агент 🆓":
+        # КД 12 часов для обычных, 0 для админов
+        on_cd, wait = check_cooldown(message.from_user.id, uname, "fa_status", 43200)
+        if on_cd:
+            bot.send_message(message.chat.id, f"⚠️ Подождите еще {wait // 3600} ч.")
+            return
+        
+        nick = u_info.get("rb_nick", "Игрок")
+        tag = f"@{uname}" if uname else "Юзер скрыт"
+        try:
+            bot.send_message(CHANNEL_ID, f"🆓 **СВОБОДНЫЙ АГЕНТ**\n👤 Игрок: {nick}\n🔗 Связь: {tag}\n⚽️ Готов к предложениям!")
+            set_cooldown(message.from_user.id, "fa_status")
+            bot.send_message(message.chat.id, "✅ Статус отправлен в канал!")
+        except:
+            bot.send_message(message.chat.id, "❌ Ошибка публикации.")
 
     elif message.text == "Свой текст 📝":
-        msg = bot.send_message(message.chat.id, "💬 Введите текст сообщения для канала (Раз в 12 часов):", reply_markup=cancel_action_keyboard())
-        bot.register_next_step_handler(msg, process_channel_custom_post)
+        m = bot.send_message(message.chat.id, "💬 Введите текст для канала (Без КД для админов):", reply_markup=get_cancel_kb())
+        bot.register_next_step_handler(m, step_custom_announcement)
 
     elif message.text == "Предложить трансфер 🤝":
-        owner_club = CLUB_OWNERS_LIST.get(uname) or user_info.get("owned_club") or (is_admin and "Администрация")
+        owner_club = CLUB_OWNERS_LIST.get(uname) or u_info.get("owned_club") or (is_admin and "Администрация")
         if owner_club:
-            msg = bot.send_message(message.chat.id, "🎯 Введите @username игрока, которому хотите предложить контракт:", reply_markup=cancel_action_keyboard())
-            bot.register_next_step_handler(msg, process_transfer_offer, owner_club)
+            m = bot.send_message(message.chat.id, "🎯 Введите @username игрока:", reply_markup=get_cancel_kb())
+            bot.register_next_step_handler(m, step_send_contract, owner_club)
 
     elif message.text == "Профиль 👤":
-        status = "Пенсия ❌" if user_info.get("is_retired") else "Актив ✅"
-        club = CLUB_OWNERS_LIST.get(uname) or user_info.get("owned_club") or "Нет"
-        bot.send_message(message.chat.id, f"👤 **ВАШ ПРОФИЛЬ**\n\n🎮 Roblox: `{user_info.get('rb_nick')}`\n📈 Статус: {status}\n🏢 Клуб: {club}", parse_mode="Markdown")
+        st = "Пенсия ❌" if u_info.get("is_retired") else "Актив ✅"
+        cl = CLUB_OWNERS_LIST.get(uname) or u_info.get("owned_club") or "Нет"
+        bot.send_message(message.chat.id, f"👤 **ПРОФИЛЬ**\n🎮 Roblox: {u_info.get('rb_nick')}\n📊 Статус: {st}\n🏢 Клуб: {cl}")
 
     elif message.text == "Список клубов 📋":
-        bot.send_message(message.chat.id, data["config"]["clubs_list_text"])
+        bot.send_message(message.chat.id, db["config"].get("clubs_list_text", "Пусто"))
 
     elif message.text == "Топ клубов 🏆":
-        bot.send_message(message.chat.id, data["config"]["top_clubs_text"])
+        bot.send_message(message.chat.id, db["config"].get("top_clubs_text", "Пусто"))
+
+    elif message.text == "Написать админам 📩":
+        m = bot.send_message(message.chat.id, "✍️ Опишите проблему:", reply_markup=get_cancel_kb())
+        bot.register_next_step_handler(m, step_send_report)
 
     elif message.text == "Завершение карьеры 🚫":
-        data["users"][uid]["is_retired"] = True
-        save_all_data(data)
-        bot.send_message(message.chat.id, "🚫 Ваша карьера завершена. Вы перешли в список неактивных игроков.", reply_markup=main_menu_keyboard(message.from_user.id, uname))
+        db["users"][uid]["is_retired"] = True
+        save_db(db)
+        bot.send_message(message.chat.id, "🚫 Карьера завершена. Вы больше не в поиске клубов.", reply_markup=get_main_kb(message.from_user.id, uname))
 
     elif message.text == "Возвращение карьеры 🔙":
-        data["users"][uid]["is_retired"] = False
-        save_all_data(data)
-        bot.send_message(message.chat.id, "✅ С возвращением! Вы снова в списке активных игроков.", reply_markup=main_menu_keyboard(message.from_user.id, uname))
+        db["users"][uid]["is_retired"] = False
+        save_db(db)
+        bot.send_message(message.chat.id, "✅ Вы вернулись в строй!", reply_markup=get_main_kb(message.from_user.id, uname))
+
+    elif message.text == "Изменить ник ✏️":
+        m = bot.send_message(message.chat.id, "✏️ Введите новый ник:", reply_markup=get_cancel_kb())
+        bot.register_next_step_handler(m, step_change_nickname)
 
 # =================================================================
-# ОБРАБОТКА ОБРАТНЫХ ВЫЗОВОВ (CALLBACKS)
+# ОБРАБОТКА ТРАНСФЕРОВ
 # =================================================================
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("contract_"))
-def handle_contract_callback(call):
-    data = load_all_data()
-    action = call.data.split("_")[1] # "ok" или "no"
-    sender_uid = str(call.data.split("_")[2])
-    
+@bot.callback_query_handler(func=lambda call: call.data.startswith("tr_"))
+def tr_callback_handler(call):
+    db = load_db()
+    action = call.data.split("_")[1] # yes/no
+    sender_id = str(call.data.split("_")[2])
     player_id = str(call.from_user.id)
-    player_nick = data["users"].get(player_id, {}).get("rb_nick", "Игрок")
     
-    sender_info = data["users"].get(sender_uid, {})
-    sender_uname = sender_info.get("username", "").lower()
-    club_name = CLUB_OWNERS_LIST.get(sender_uname) or sender_info.get("owned_club", "Клуб")
+    player_nick = db["users"].get(player_id, {}).get("rb_nick", "Игрок")
+    sender_uname = db["users"].get(sender_id, {}).get("username", "").lower()
+    club = CLUB_OWNERS_LIST.get(sender_uname) or db["users"].get(sender_id, {}).get("owned_club", "Клуб")
 
-    if action == "ok":
-        bot.edit_message_text(f"✅ Вы приняли предложение от клуба {club_name}!", call.message.chat.id, call.message.message_id)
-        bot.send_message(sender_uid, f"🔥 Игрок {player_nick} ПРИНЯЛ ваш контракт!")
-        # Пост в канал
-        bot.send_message(CHANNEL_ID, f"🏠 **ТРАНСФЕР СОСТОЯЛСЯ**\n\n🎮 Игрок: {player_nick}\n🏢 Новый клуб: {club_name}\n🤝 Желаем успехов!")
+    if action == "yes":
+        bot.edit_message_text(f"✅ Вы приняли контракт от {club}!", call.message.chat.id, call.message.message_id)
+        bot.send_message(sender_id, f"🔥 {player_nick} ПРИНЯЛ контракт!")
+        bot.send_message(CHANNEL_ID, f"🏠 **ТРАНСФЕР СОСТОЯЛСЯ**\n🎮 Игрок: {player_nick}\n🏢 Клуб: {club}")
     else:
-        bot.edit_message_text(f"❌ Вы отклонили предложение от {club_name}.", call.message.chat.id, call.message.message_id)
-        bot.send_message(sender_uid, f"❌ Игрок {player_nick} отклонил ваш контракт.")
+        bot.edit_message_text("❌ Вы отклонили предложение.", call.message.chat.id, call.message.message_id)
+        bot.send_message(sender_id, f"❌ {player_nick} отклонил запрос.")
 
 # =================================================================
 # ЗАПУСК
 # =================================================================
 
 if __name__ == "__main__":
-    print("Бот успешно запущен...")
+    print("Бот Nazikrrk успешно запущен и готов к работе...")
     bot.infinity_polling()
